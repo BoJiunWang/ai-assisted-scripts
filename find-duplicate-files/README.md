@@ -90,4 +90,4 @@ node find-duplicate-files.js make-cache ./path/A ./path/B
 
 ## 作者 (Author)
 
-此程式碼由 ChatGPT 的大型語言模型 Codex 產生與協助開發。
+此程式碼由 OpenAI 的大型語言模型 Codex 產生與協助開發。
