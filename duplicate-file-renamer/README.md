@@ -1,4 +1,4 @@
-# 檔案重複命名整理工具 (Duplicate File Renamer)
+# 重複檔案重新命名工具 (Duplicate File Renamer)
 
 這是一個使用 Node.js 編寫的命令列工具，旨在掃描指定資料夾，找出因下載、複製或備份而產生的命名相似的檔案（例如 `photo.jpg`, `photo (1).jpg`, `photo_2.jpg`），並將它們標準化為一致的命名格式。
 
@@ -18,12 +18,12 @@
 
 ## 如何使用
 
-1.  將 `findDuplicates.js` 檔案儲存到您的電腦中。
+1.  將 `duplicate-file-renamer.js` 檔案儲存到您的電腦中。
 2.  打開您的終端機 (Terminal) 或命令提示字元 (Command Prompt)。
-3.  使用 `cd` 指令切換到 `findDuplicates.js` 檔案所在的目錄。
+3.  使用 `cd` 指令切換到 `duplicate-file-renamer.js` 檔案所在的目錄。
 4.  執行以下指令啟動程式：
     ```bash
-    node findDuplicates.js
+    node duplicate-file-renamer.js
     ```
 5.  依照畫面上出現的提示，依序輸入所需資訊：
     - **要掃描的資料夾路徑**：預設為當前目錄 (`./`)。
