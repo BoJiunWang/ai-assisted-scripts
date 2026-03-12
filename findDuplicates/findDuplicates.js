@@ -1,6 +1,24 @@
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const readline = require('readline');
+const crypto = require('crypto');
+
+/**
+ * 計算指定檔案的 MD5 雜湊值。
+ * 透過讀取檔案串流並以 crypto 模組計算，結果為十六進位字串。
+ * @param {string} filePath - 要計算 MD5 的檔案完整路徑。
+ * @returns {Promise<string>} - 代表檔案 MD5 雜湊值的十六進位字串。
+ */
+function computeMD5(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('md5');
+    const stream = fsSync.createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
 
 /**
  * 從完整檔名中解析出「基準名稱」。
@@ -43,8 +61,29 @@ async function renameDuplicateFiles(groups, directory, backupDir) {
       continue;
     }
 
-    console.log(`處理群組 (基準名稱: ${baseName}):`);
-    fileList.sort();
+    // 延遲印出群組標題：只有在群組內真正有檔案被重新命名時才顯示
+    let groupHeaderPrinted = false;
+    const printGroupHeader = () => {
+      if (!groupHeaderPrinted) {
+        console.log(`處理群組 (基準名稱: ${baseName}):`);
+        groupHeaderPrinted = true;
+      }
+    };
+
+
+    // 計算群組中每個檔案的 MD5，並依 MD5 排序以確保重新命名順序固定不變
+    const md5Map = new Map();
+    for (const file of fileList) {
+      const filePath = path.join(directory, file);
+      try {
+        const md5 = await computeMD5(filePath);
+        md5Map.set(file, md5);
+      } catch (e) {
+        // 若無法計算 MD5（例如檔案已被移動），則以空字串作為佔位
+        md5Map.set(file, '');
+      }
+    }
+    fileList.sort((a, b) => (md5Map.get(a) || '').localeCompare(md5Map.get(b) || ''));
 
     // 決定哪個檔案應該作為基準檔案 (優先選擇沒有數字後綴的原始檔名)
     let fileToBecomeBase = fileList.find(f => f === baseName);
@@ -79,23 +118,31 @@ async function renameDuplicateFiles(groups, directory, backupDir) {
     if (baseTempInfo) {
       try {
         const idealPath = path.join(directory, baseName);
-        // 檢查目標路徑是否已經被其他檔案佔用
-        const stats = await fs.stat(idealPath).catch(() => null);
-        if (stats) {
-           console.error(`  - 目標檔名 "${baseName}" 已被其他檔案使用，無法完成標準化命名。`);
-           // 如果目標檔名已被佔用，則將此檔案也加入待處理列表，稍後會為其加上數字後綴。
-           otherFiles.push(fileToBecomeBase);
-           otherFiles.sort();
+        if (baseTempInfo.originalName === baseName) {
+          // 檔名已與目標相同，無需重新命名，直接將暫存檔還原即可
+          await fs.rename(baseTempInfo.tempPath, idealPath);
+          successfullyRenamedBase = true;
         } else {
+          // 檢查目標路徑是否已經被其他檔案佔用
+          const stats = await fs.stat(idealPath).catch(() => null);
+          if (stats) {
+            console.error(`  - 目標檔名 "${baseName}" 已被其他檔案使用，無法完成標準化命名。`);
+            // 如果目標檔名已被佔用，則將此檔案也加入待處理列表，稍後會為其加上數字後綴。
+            otherFiles.push(fileToBecomeBase);
+            otherFiles.sort((a, b) => (md5Map.get(a) || '').localeCompare(md5Map.get(b) || ''));
+          } else {
             await fs.rename(baseTempInfo.tempPath, idealPath);
+            printGroupHeader();
             console.log(`  - 已將 "${baseTempInfo.originalName}" 重新命名為 "${baseName}" (作為主要檔案)`);
             successfullyRenamedBase = true;
+          }
         }
       } catch (error) {
-         console.error(`  - 將 "${baseTempInfo.originalName}" 重新命名為主要檔案時失敗: ${error.message}`);
-         // 如果重新命名失敗，同樣將此檔案加入待處理列表。
-         otherFiles.push(fileToBecomeBase);
-         otherFiles.sort();
+        printGroupHeader();
+        console.error(`  - 將 "${baseTempInfo.originalName}" 重新命名為主要檔案時失敗: ${error.message}`);
+        // 如果重新命名失敗，同樣將此檔案加入待處理列表。
+        otherFiles.push(fileToBecomeBase);
+        otherFiles.sort((a, b) => (md5Map.get(a) || '').localeCompare(md5Map.get(b) || ''));
       }
     }
 
@@ -118,15 +165,27 @@ async function renameDuplicateFiles(groups, directory, backupDir) {
         (await fs.access(newPath).then(() => true).catch(() => false))
       );
 
+      if (tempInfo.originalName === newName) {
+        // 檔名已與目標相同，無需重新命名，直接將暫存檔還原即可
+        try {
+          await fs.rename(tempInfo.tempPath, newPath);
+        } catch (error) {
+          console.error(`  - 還原「${tempInfo.originalName}」時失敗: ${error.message}`);
+        }
+        continue;
+      }
+
       try {
         await fs.rename(tempInfo.tempPath, newPath);
+        printGroupHeader();
         console.log(`  - 已將 "${tempInfo.originalName}" 重新命名為 "${newName}"`);
       } catch (error) {
+        printGroupHeader();
         console.error(`  - 從暫存檔還原命名「${tempInfo.originalName}」時失敗: ${error.message}`);
       }
     }
 
-    if (fileList.length > 0) {
+    if (groupHeaderPrinted) {
       console.log('---');
     }
   }
